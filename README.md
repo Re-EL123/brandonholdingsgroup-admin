@@ -2,9 +2,11 @@
 
 Control panel for the
 [Brandon Holdings Group static site](https://github.com/Re-EL123/Brandon-Holdings-Group-Website).
-A single static `admin.html` that talks to the
+A single static page (`index.html`, with a splash entry screen) that talks to
+the
 [brandonholdingsgroup-api](https://github.com/Re-EL123/brandonholdingsgroup-api)
 middleman — it never talks to Firebase directly and holds no secrets.
+`admin.html` redirects to `index.html` for backwards compatibility.
 
 ## Features
 
@@ -31,7 +33,7 @@ middleman — it never talks to Firebase directly and holds no secrets.
 
 ```bash
 python3 -m http.server 8081
-# open http://localhost:8081/admin.html?api=http://localhost:8080
+# open http://localhost:8081/?api=http://localhost:8080
 ```
 
 or use any static host / Vercel. The admin repo has no runtime code of its
@@ -40,10 +42,10 @@ own — just this page.
 ## Deploying
 
 Host the directory as a static Vercel/Netlify/GitHub Pages project, then open
-the deployed `admin.html` with the API base appended:
+the deployed `index.html` with the API base appended:
 
 ```
-https://<admin-host>/admin.html?api=https://<api-host>
+https://<admin-host>/?api=https://<api-host>
 ```
 
 The API's CORS is permissive so the page works from any origin. To avoid the

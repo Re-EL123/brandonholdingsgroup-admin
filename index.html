@@ -224,7 +224,11 @@
       </div>
       <div class="charts">
         <div class="card chart-card"><h2>New vs returning (today)</h2><div class="donut" id="dnNewReturn"></div></div>
-        <div class="card chart-card"><h2>Users by region</h2><div class="donut" id="dnRegion"></div></div>
+      </div>
+      <div class="charts charts3">
+        <div class="card chart-card"><h2>Users by country</h2><div class="donut" id="dnCountry"></div></div>
+        <div class="card chart-card"><h2>Users by province / state</h2><div class="donut" id="dnProvince"></div></div>
+        <div class="card chart-card"><h2>Users by city / town</h2><div class="donut" id="dnCity"></div></div>
       </div>
       <div class="card">
         <h2>Visitor map</h2>
@@ -495,7 +499,15 @@
         { label: 'New today', value: u.newToday || 0 },
         { label: 'Returning today', value: u.returningToday || 0 }
       ], 'users');
-      donut($('#dnRegion'), Object.keys(u.byCountry || {}).map(function (c) { return { label: countryName(c), value: u.byCountry[c] }; }), 'users');
+      donut($('#dnCountry'), Object.keys(u.byCountry || {}).map(function (c) { return { label: countryName(c), value: u.byCountry[c] }; }), 'users');
+      donut($('#dnProvince'), Object.keys(u.byProvince || {}).map(function (k) {
+        var p = k.split(':');
+        return { label: (p[1] || p[0]) + (p[0] && p[1] ? ', ' + countryName(p[0]) : ''), value: u.byProvince[k] };
+      }), 'users');
+      donut($('#dnCity'), Object.keys(u.byCity || {}).map(function (k) {
+        var p = k.split(':');
+        return { label: [p[2], p[1], countryName(p[0])].filter(Boolean).join(', '), value: u.byCity[k] };
+      }), 'users');
 
       var ue = d.userEvents || [];
       $('#tbUsers').innerHTML = ue.length

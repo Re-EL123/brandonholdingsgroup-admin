@@ -32,9 +32,20 @@
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
   @media (max-width: 720px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
-  .btn { background: var(--brand); color: #fff; border: 0; padding: 11px 18px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; }
+  .btn { background: var(--brand); color: #fff; border: 0; padding: 11px 18px; border-radius: 8px; font-weight: 700; font-size: 14px; cursor: pointer; transition: background .2s ease, transform .12s ease, opacity .2s ease; }
+  .btn:hover { background: #0f7977; }
   .btn.secondary { background: var(--card2); color: var(--text); border: 1px solid var(--line); }
+  .btn.secondary:hover { background: #202a47; }
+  .btn[disabled] { opacity: .65; cursor: progress; }
+  .btn.busy .bs { display: inline-block; width: 14px; height: 14px; margin-right: 9px; vertical-align: -2px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+  .btn.secondary.busy .bs { border-color: rgba(255,255,255,.22); border-top-color: var(--text); }
   .btn:active { transform: translateY(1px); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .tabpane { animation: fadeUp .28s ease; }
+  .card { animation: fadeUp .3s ease both; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  tbody tr { animation: fadeIn .3s ease both; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   .note { font-size: 12px; color: var(--muted); margin-top: 12px; line-height: 1.6; }
   .tabs { display: flex; gap: 6px; margin-bottom: 18px; }
   .tab { background: var(--card2); border: 1px solid var(--line); color: var(--muted); padding: 10px 18px; border-radius: 9px; cursor: pointer; font-size: 14px; }
@@ -53,9 +64,9 @@
   #login .card { text-align: center; }
   #login input { text-align: center; }
   .hint { font-size: 12px; color: var(--muted); margin-top: 14px; }
-  #toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--card2); border: 1px solid var(--green); color: var(--text); padding: 12px 20px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 10; }
+  #toast { position: fixed; bottom: 22px; left: 50%; transform: translate(-50%, 14px); background: var(--card2); border: 1px solid var(--green); color: var(--text); padding: 12px 20px; border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .28s ease, transform .28s ease; pointer-events: none; z-index: 10; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
   #toast.err { border-color: var(--red); }
-  #toast.show { opacity: 1; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
   .empty { color: var(--muted); padding: 14px; text-align: center; }
 
   /* Splash screen */
@@ -207,6 +218,32 @@
     toast._t = setTimeout(function () { t.classList.remove('show'); }, 2600);
   }
 
+  function withBusy(btn, label, fn) {
+    var was = btn.textContent;
+    btn.disabled = true;
+    btn.classList.add('busy');
+    btn.innerHTML = '<span class="bs"></span>' + label;
+    var restore = function (r) { btn.innerHTML = was; btn.classList.remove('busy'); btn.disabled = false; return r; };
+    return Promise.resolve().then(fn).then(restore, function (e) { restore(); throw e; });
+  }
+
+  function countUp(el, target) {
+    target = +target || 0;
+    var from = +el.textContent || 0;
+    if (from === target) { el.textContent = target; return; }
+    var start = null, dur = 550;
+    function step(now) {
+      if (!start) start = now;
+      var t = Math.min((now - start) / dur, 1);
+      var e = 1 - Math.pow(1 - t, 3);
+      el.textContent = Math.round(from + (target - from) * e);
+      if (t < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function rowStyle(i) { return ' style="animation-delay:' + Math.min(i * 40, 360) + 'ms"'; }
+
   function api(path, opts) {
     opts = opts || {};
     var headers = opts.headers || {};
@@ -291,30 +328,30 @@
       var byPage = Object.keys(t.byPage || {}).sort(function (a, b) { return (t.byPage[b] || 0) - (t.byPage[a] || 0); });
       var byDay = Object.keys(t.byDay || {}).sort();
       var today = new Date().toISOString().slice(0, 10);
-      $('#stTotal').textContent = t.total || 0;
-      $('#stEmails').textContent = (d.emails || []).length;
-      $('#stSubs').textContent = (d.submissions || []).length;
-      $('#stToday').textContent = t.byDay && t.byDay[today] ? t.byDay[today] : 0;
+      countUp($('#stTotal'), t.total || 0);
+      countUp($('#stEmails'), (d.emails || []).length);
+      countUp($('#stSubs'), (d.submissions || []).length);
+      countUp($('#stToday'), t.byDay && t.byDay[today] ? t.byDay[today] : 0);
 
       $('#tbByPage').innerHTML = byPage.length
-        ? byPage.map(function (p) { return '<tr><td>' + esc(p || '(unknown)') + '</td><td style="text-align:right">' + t.byPage[p] + '</td></tr>'; }).join('')
+        ? byPage.map(function (p, i) { return '<tr' + rowStyle(i) + '><td>' + esc(p || '(unknown)') + '</td><td style="text-align:right">' + t.byPage[p] + '</td></tr>'; }).join('')
         : '<tr><td colspan="2" class="empty">No views yet</td></tr>';
 
       $('#tbViews').innerHTML = (d.recentViews || []).length
-        ? d.recentViews.map(function (v) { return '<tr><td>' + fmtTime(v.ts) + '</td><td>' + esc(v.page) + '</td><td class="muted">' + esc(v.ref || '') + '</td></tr>'; }).join('')
+        ? d.recentViews.map(function (v, i) { return '<tr' + rowStyle(i) + '><td>' + fmtTime(v.ts) + '</td><td>' + esc(v.page) + '</td><td class="muted">' + esc(v.ref || '') + '</td></tr>'; }).join('')
         : '<tr><td colspan="3" class="empty">No page views recorded yet</td></tr>';
 
       $('#tbEmails').innerHTML = (d.emails || []).length
-        ? d.emails.map(function (e) {
+        ? d.emails.map(function (e, i) {
             var st = e.status === 'sent' ? '<span style="color:var(--green)">sent</span>' : '<span style="color:var(--brand-2)">' + esc(e.status || 'skipped') + '</span>';
-            return '<tr><td>' + fmtTime(e.ts) + '</td><td>' + esc(e.to || '') + '</td><td>' + esc(e.subject || '') + '</td><td>' + st + '</td></tr>';
+            return '<tr' + rowStyle(i) + '><td>' + fmtTime(e.ts) + '</td><td>' + esc(e.to || '') + '</td><td>' + esc(e.subject || '') + '</td><td>' + st + '</td></tr>';
           }).join('')
         : '<tr><td colspan="4" class="empty">No emails sent yet</td></tr>';
 
       $('#tbSubs').innerHTML = (d.submissions || []).length
-        ? d.submissions.map(function (s) {
+        ? d.submissions.map(function (s, i) {
             var fields = (s.values || []).map(function (v) { return esc(v.label) + ': ' + esc(v.value); }).join(' · ');
-            return '<tr><td>' + fmtTime(s.ts) + '</td><td>' + esc(s.type === 'contact' ? 'Contact form' : 'Forminator ' + (s.form || '')) + '</td><td class="muted">' + (fields || '—') + '</td></tr>';
+            return '<tr' + rowStyle(i) + '><td>' + fmtTime(s.ts) + '</td><td>' + esc(s.type === 'contact' ? 'Contact form' : 'Forminator ' + (s.form || '')) + '</td><td class="muted">' + (fields || '—') + '</td></tr>';
           }).join('')
         : '<tr><td colspan="3" class="empty">No submissions yet</td></tr>';
     }).catch(function (e) {
@@ -328,7 +365,7 @@
     if (!t) { toast('Enter the ADMIN_TOKEN', true); return; }
     token = t;
     sessionStorage.setItem(TOKEN_KEY, t);
-    loadSettings().then(loadStats).catch(function () {});
+    withBusy($('#loginBtn'), 'Connecting…', function () { return loadSettings().then(loadStats); }).catch(function () {});
   });
   $('#tokenInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('#loginBtn').click(); });
 
@@ -345,30 +382,34 @@
 
   // ---- saves ----
   $('#saveEmailBtn').addEventListener('click', function () {
-    api('/api/admin/settings', { method: 'POST', json: { to_email: $('#toEmail').value.trim(), from_email: $('#fromEmail').value.trim() } })
-      .then(function () { toast('Email settings saved'); loadSettings(); })
-      .catch(function (e) { toast(e.message, true); });
+    withBusy($('#saveEmailBtn'), 'Saving…', function () {
+      return api('/api/admin/settings', { method: 'POST', json: { to_email: $('#toEmail').value.trim(), from_email: $('#fromEmail').value.trim() } })
+        .then(function () { toast('Email settings saved'); return loadSettings(); });
+    }).catch(function (e) { toast(e.message, true); });
   });
 
   $('#saveContactBtn').addEventListener('click', function () {
-    api('/api/admin/settings', {
-      method: 'POST',
-      json: {
-        contact: {
-          address: $('#cAddress').value.trim(),
-          email: $('#cEmail').value.trim(),
-          phone: $('#cPhone').value.trim(),
-          whatsapp: $('#cWhatsapp').value.trim(),
-          facebook: $('#cFacebook').value.trim(),
-          instagram: $('#cInstagram').value.trim(),
-          linkedin: $('#cLinkedin').value.trim()
+    withBusy($('#saveContactBtn'), 'Saving…', function () {
+      return api('/api/admin/settings', {
+        method: 'POST',
+        json: {
+          contact: {
+            address: $('#cAddress').value.trim(),
+            email: $('#cEmail').value.trim(),
+            phone: $('#cPhone').value.trim(),
+            whatsapp: $('#cWhatsapp').value.trim(),
+            facebook: $('#cFacebook').value.trim(),
+            instagram: $('#cInstagram').value.trim(),
+            linkedin: $('#cLinkedin').value.trim()
+          }
         }
-      }
-    }).then(function () { toast('Contact details saved'); loadSettings(); })
-      .catch(function (e) { toast(e.message, true); });
+      }).then(function () { toast('Contact details saved'); return loadSettings(); });
+    }).catch(function (e) { toast(e.message, true); });
   });
 
-  $('#refreshStats').addEventListener('click', function () { loadStats().then(function () { toast('Stats refreshed'); }); });
+  $('#refreshStats').addEventListener('click', function () {
+    withBusy($('#refreshStats'), 'Refreshing…', loadStats).then(function () { toast('Stats refreshed'); });
+  });
 
   // ---- boot ----
   if (token) {

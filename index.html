@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Brandon Holdings Group — Admin</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <style>
   :root {
     --bg: #0b0f1a; --card: #141a2e; --card2: #1a2238; --line: #26304d;
@@ -68,6 +69,22 @@
   #toast.err { border-color: var(--red); }
   #toast.show { opacity: 1; transform: translate(-50%, 0); }
   .empty { color: var(--muted); padding: 14px; text-align: center; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 20px; }
+  .charts3 { grid-template-columns: 1fr 1fr 1fr; }
+  @media (max-width: 900px) { .charts, .charts3 { grid-template-columns: 1fr; } }
+  .chart-card h2 { margin-bottom: 8px; }
+  .donut-wrap { position: relative; width: 170px; margin: 0 auto; }
+  .donut-svg { width: 100%; height: auto; display: block; }
+  .donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 26px; font-weight: 800; line-height: 1.1; }
+  .donut-center span { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; margin-top: 2px; }
+  .donut-legend { list-style: none; margin: 14px 0 0; padding: 0; font-size: 13px; }
+  .donut-legend li { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .donut-legend .sw { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
+  .donut-legend b { margin-left: auto; color: var(--text); }
+  .donut { animation: fadeUp .3s ease both; }
+  #map { height: 380px; border-radius: 10px; border: 1px solid var(--line); background: #0b0f1a; position: relative; z-index: 0; }
+  .leaflet-popup-content { font-size: 13px; color: #1a2238; }
+  .leaflet-popup-content .new-tag { color: var(--brand-2); font-size: 12px; }
 
   /* Splash screen */
   #splash:not([hidden]) { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
@@ -124,6 +141,7 @@
       <button class="tab active" data-tab="settings">Email settings</button>
       <button class="tab" data-tab="contact">Contact details</button>
       <button class="tab" data-tab="stats">Stats</button>
+      <button class="tab" data-tab="users">Users</button>
     </div>
 
     <section id="tab-settings" class="tabpane">
@@ -173,6 +191,11 @@
         <div class="stat"><div class="num" id="stSubs">–</div><div class="lbl">Form submissions</div></div>
         <div class="stat"><div class="num" id="stToday">–</div><div class="lbl">Views today</div></div>
       </div>
+      <div class="charts charts3">
+        <div class="card chart-card"><h2>Views by page</h2><div class="donut" id="dnByPage"></div></div>
+        <div class="card chart-card"><h2>Emails by status</h2><div class="donut" id="dnEmails"></div></div>
+        <div class="card chart-card"><h2>Submissions by type</h2><div class="donut" id="dnSubs"></div></div>
+      </div>
       <div class="card">
         <h2>Views by page</h2>
         <table><thead><tr><th>Page</th><th style="text-align:right">Views</th></tr></thead><tbody id="tbByPage"></tbody></table>
@@ -191,11 +214,34 @@
       </div>
       <p><button class="btn secondary" id="refreshStats">Refresh stats</button></p>
     </section>
+
+    <section id="tab-users" class="tabpane" hidden>
+      <div class="stats">
+        <div class="stat"><div class="num" id="uTotal">–</div><div class="lbl">Total users</div></div>
+        <div class="stat"><div class="num" id="uNew">–</div><div class="lbl">New users today</div></div>
+        <div class="stat"><div class="num" id="uReturn">–</div><div class="lbl">Returning today</div></div>
+        <div class="stat"><div class="num" id="uCountries">–</div><div class="lbl">Countries</div></div>
+      </div>
+      <div class="charts">
+        <div class="card chart-card"><h2>New vs returning (today)</h2><div class="donut" id="dnNewReturn"></div></div>
+        <div class="card chart-card"><h2>Users by region</h2><div class="donut" id="dnRegion"></div></div>
+      </div>
+      <div class="card">
+        <h2>Visitor map</h2>
+        <div id="map"></div>
+        <p class="note">Approximate location from the visitor's IP, shown per device (latest visit). Circle size = number of visits.</p>
+      </div>
+      <div class="card">
+        <h2>Recent users</h2>
+        <table><thead><tr><th>Time</th><th>Status</th><th>Region</th><th>Page</th></tr></thead><tbody id="tbUsers"></tbody></table>
+      </div>
+    </section>
   </main>
 </div>
 
 <div id="toast"></div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <script>
 (function () {
   'use strict';
@@ -243,6 +289,101 @@
   }
 
   function rowStyle(i) { return ' style="animation-delay:' + Math.min(i * 40, 360) + 'ms"'; }
+
+  // ---- donut charts (inline SVG, no library) ----
+  var DONUT_COLORS = ['#0E6563', '#3dbdb6', '#35c47f', '#f0a53c', '#4e7bd9', '#7a5cff', '#d98ad6', '#e5675b'];
+
+  function donut(el, items, centerLabel) {
+    items = (items || []).filter(function (i) { return (i.value || 0) > 0; }).sort(function (a, b) { return b.value - a.value; });
+    var total = items.reduce(function (s, i) { return s + i.value; }, 0);
+    if (!total) { el.innerHTML = '<p class="empty">No data yet</p>'; return; }
+    var slices = items.slice(0, 6);
+    if (items.length > 6) {
+      slices.push({ label: 'Other', value: items.slice(6).reduce(function (s, i) { return s + i.value; }, 0) });
+    }
+    var R = 54, C = 2 * Math.PI * R, acc = 0;
+    var segs = slices.map(function (s, i) {
+      var frac = s.value / total;
+      var dash = Math.max(frac * C - 2, 1);
+      var gap = Math.max(C - dash, 0);
+      var off = C * 0.25 - acc * C;
+      acc += frac;
+      return '<circle cx="70" cy="70" r="' + R + '" fill="none" stroke="' + DONUT_COLORS[i % DONUT_COLORS.length] + '" stroke-width="20" stroke-dasharray="' + dash.toFixed(2) + ' ' + gap.toFixed(2) + '" stroke-dashoffset="' + off.toFixed(2) + '"></circle>';
+    }).join('');
+    var legend = slices.map(function (s, i) {
+      return '<li><span class="sw" style="background:' + DONUT_COLORS[i % DONUT_COLORS.length] + '"></span>' + esc(s.label) + '<b>' + s.value + '</b></li>';
+    }).join('');
+    el.innerHTML = '<div class="donut-wrap"><svg viewBox="0 0 140 140" class="donut-svg">' + segs + '</svg>' +
+      '<div class="donut-center">' + total + '<span>' + esc(centerLabel || 'total') + '</span></div></div>' +
+      '<ul class="donut-legend">' + legend + '</ul>';
+  }
+
+  var COUNTRY = {
+    ZA: 'South Africa', NG: 'Nigeria', GH: 'Ghana', KE: 'Kenya', TZ: 'Tanzania', UG: 'Uganda', BW: 'Botswana',
+    NA: 'Namibia', ZW: 'Zimbabwe', MW: 'Malawi', MZ: 'Mozambique', ZM: 'Zambia', AO: 'Angola', ET: 'Ethiopia',
+    EG: 'Egypt', MA: 'Morocco', DZ: 'Algeria', TN: 'Tunisia', CM: 'Cameroon', SN: 'Senegal', CI: 'Ivory Coast',
+    CD: 'DR Congo', US: 'United States', CA: 'Canada', MX: 'Mexico', BR: 'Brazil', AR: 'Argentina', CL: 'Chile',
+    CO: 'Colombia', PE: 'Peru', VE: 'Venezuela', GB: 'United Kingdom', IE: 'Ireland', DE: 'Germany', FR: 'France',
+    ES: 'Spain', IT: 'Italy', PT: 'Portugal', NL: 'Netherlands', BE: 'Belgium', CH: 'Switzerland', AT: 'Austria',
+    SE: 'Sweden', NO: 'Norway', DK: 'Denmark', FI: 'Finland', PL: 'Poland', CZ: 'Czechia', RU: 'Russia', UA: 'Ukraine',
+    TR: 'Turkey', GR: 'Greece', AE: 'United Arab Emirates', SA: 'Saudi Arabia', QA: 'Qatar', KW: 'Kuwait',
+    BH: 'Bahrain', OM: 'Oman', IL: 'Israel', IN: 'India', PK: 'Pakistan', BD: 'Bangladesh', LK: 'Sri Lanka',
+    CN: 'China', JP: 'Japan', KR: 'South Korea', ID: 'Indonesia', MY: 'Malaysia', SG: 'Singapore', PH: 'Philippines',
+    TH: 'Thailand', VN: 'Vietnam', AU: 'Australia', NZ: 'New Zealand'
+  };
+  function countryName(code) {
+    var c = String(code || '').toUpperCase();
+    return COUNTRY[c] || c || 'Unknown';
+  }
+
+  // ---- leaflet visitor map ----
+  var lastStats = null;
+  var mapReady = false;
+  var markerGroup = null;
+  var userMap = null;
+
+  function ensureMap() {
+    if (mapReady) return;
+    if (typeof L === 'undefined') { $('#map').innerHTML = '<p class="empty">Map library failed to load — check connection.</p>'; return; }
+    userMap = L.map('map').setView([15, 10], 2);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 18
+    }).addTo(userMap);
+    mapReady = true;
+  }
+
+  function renderMap(events) {
+    ensureMap();
+    if (!mapReady) return;
+    if (markerGroup) { userMap.removeLayer(markerGroup); markerGroup = null; }
+    var byUid = {};
+    (events || []).forEach(function (e) {
+      if (!e || !e.uid) return;
+      var rec = byUid[e.uid] || (byUid[e.uid] = { count: 0, last: null });
+      rec.count++;
+      if (!rec.last || e.ts > rec.last.ts) rec.last = e;
+    });
+    markerGroup = L.featureGroup();
+    var placed = 0;
+    Object.keys(byUid).forEach(function (uid) {
+      var rec = byUid[uid], e = rec.last;
+      if (!e || !isFinite(+e.lat) || !isFinite(+e.lon)) return;
+      var r = Math.min(6 + rec.count * 2.5, 16);
+      var loc = [e.city, e.region, countryName(e.country)].filter(Boolean).join(', ') || countryName(e.country);
+      var pop = '<b>' + esc(countryName(e.country)) + '</b><br>' + esc(loc) + '<br>' + rec.count + ' visit' + (rec.count > 1 ? 's' : '') + (e.new ? '<br><span class="new-tag">new</span>' : '');
+      L.circleMarker([+e.lat, +e.lon], {
+        radius: r,
+        color: '#0a4b49', weight: 1, fillColor: '#3dbdb6', fillOpacity: .78
+      }).bindPopup(pop).addTo(markerGroup);
+      placed++;
+    });
+    if (placed) {
+      markerGroup.addTo(userMap);
+      userMap.fitBounds(markerGroup.getBounds().pad(0.3), { maxZoom: 8 });
+    }
+  }
 
   function api(path, opts) {
     opts = opts || {};
@@ -324,6 +465,7 @@
   function loadStats() {
     return api('/api/admin/stats').then(function (d) {
       setBackend(d.backend, d.resendConfigured);
+      lastStats = d;
       var t = d.traffic || {};
       var byPage = Object.keys(t.byPage || {}).sort(function (a, b) { return (t.byPage[b] || 0) - (t.byPage[a] || 0); });
       var byDay = Object.keys(t.byDay || {}).sort();
@@ -332,6 +474,37 @@
       countUp($('#stEmails'), (d.emails || []).length);
       countUp($('#stSubs'), (d.submissions || []).length);
       countUp($('#stToday'), t.byDay && t.byDay[today] ? t.byDay[today] : 0);
+
+      donut($('#dnByPage'), byPage.map(function (p) { return { label: p, value: t.byPage[p] }; }), 'views');
+      var emSt = {};
+      (d.emails || []).forEach(function (e) {
+        var k = e.status === 'sent' ? 'Sent' : e.status === 'failed' ? 'Failed' : e.status === 'skipped' ? 'Skipped' : (e.status || 'Other');
+        emSt[k] = (emSt[k] || 0) + 1;
+      });
+      donut($('#dnEmails'), Object.keys(emSt).map(function (k) { return { label: k, value: emSt[k] }; }), 'emails');
+      var subSt = {};
+      (d.submissions || []).forEach(function (s) { var k = s.type === 'contact' ? 'Contact form' : 'Forminator'; subSt[k] = (subSt[k] || 0) + 1; });
+      donut($('#dnSubs'), Object.keys(subSt).map(function (k) { return { label: k, value: subSt[k] }; }), 'subs');
+
+      var u = d.users || {};
+      countUp($('#uTotal'), u.total || 0);
+      countUp($('#uNew'), u.newToday || 0);
+      countUp($('#uReturn'), u.returningToday || 0);
+      countUp($('#uCountries'), u.countries || 0);
+      donut($('#dnNewReturn'), [
+        { label: 'New today', value: u.newToday || 0 },
+        { label: 'Returning today', value: u.returningToday || 0 }
+      ], 'users');
+      donut($('#dnRegion'), Object.keys(u.byCountry || {}).map(function (c) { return { label: countryName(c), value: u.byCountry[c] }; }), 'users');
+
+      var ue = d.userEvents || [];
+      $('#tbUsers').innerHTML = ue.length
+        ? ue.map(function (e, i) {
+            var st = e.new ? '<span style="color:var(--brand-2)">new</span>' : '<span class="muted">returning</span>';
+            var loc = [e.city, e.region, countryName(e.country)].filter(Boolean).join(', ') || '—';
+            return '<tr' + rowStyle(i) + '><td>' + fmtTime(e.ts) + '</td><td>' + st + '</td><td>' + esc(loc) + '</td><td class="muted">' + esc(e.page || '') + '</td></tr>';
+          }).join('')
+        : '<tr><td colspan="4" class="empty">No users recorded yet — visits start counting once the updated site beacon is live.</td></tr>';
 
       $('#tbByPage').innerHTML = byPage.length
         ? byPage.map(function (p, i) { return '<tr' + rowStyle(i) + '><td>' + esc(p || '(unknown)') + '</td><td style="text-align:right">' + t.byPage[p] + '</td></tr>'; }).join('')
@@ -356,6 +529,8 @@
         : '<tr><td colspan="3" class="empty">No submissions yet</td></tr>';
     }).catch(function (e) {
       if (e.message !== 'Unauthorized') toast(e.message, true);
+    }).then(function () {
+      if (!$('#tab-users').hidden) requestAnimationFrame(function () { renderMap(lastStats ? lastStats.userEvents : []); });
     });
   }
 
@@ -377,6 +552,9 @@
       $$('.tabpane').forEach(function (p) { p.hidden = true; });
       $('#tab-' + tab.dataset.tab).hidden = false;
       if (tab.dataset.tab === 'stats') loadStats();
+      if (tab.dataset.tab === 'users') {
+        requestAnimationFrame(function () { renderMap(lastStats ? lastStats.userEvents : []); });
+      }
     });
   });
 

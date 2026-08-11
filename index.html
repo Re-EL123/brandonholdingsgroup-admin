@@ -188,7 +188,7 @@
 (function () {
   'use strict';
 
-  var API_BASE = (new URLSearchParams(location.search).get('api') || window.ADMIN_API_BASE || '').replace(/\/+$/, '');
+  var API_BASE = (new URLSearchParams(location.search).get('api') || window.ADMIN_API_BASE || 'https://brandonholdingsgroup-api-delta.vercel.app').replace(/\/+$/, '');
   var TOKEN_KEY = 'bhhg_admin_token';
   var token = sessionStorage.getItem(TOKEN_KEY) || '';
 

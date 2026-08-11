@@ -37,6 +37,20 @@ python3 -m http.server 8081
 or use any static host / Vercel. The admin repo has no runtime code of its
 own — just this page.
 
+## Deploying
+
+Host the directory as a static Vercel/Netlify/GitHub Pages project, then open
+the deployed `admin.html` with the API base appended:
+
+```
+https://<admin-host>/admin.html?api=https://<api-host>
+```
+
+The API's CORS is permissive so the page works from any origin. To avoid the
+query string, deploy the admin page on the same domain as the API and it will
+default to that origin. `scripts/deploy.sh` from the API repo can deploy all
+three pieces at once.
+
 ## Security notes
 
 - The admin token is the gate for all `/api/admin/*` calls. Protect it.

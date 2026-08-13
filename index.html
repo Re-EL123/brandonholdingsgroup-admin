@@ -26,6 +26,9 @@
   .badge.warn { color: var(--brand-2); border-color: var(--brand-2); }
   fieldset { border: none; margin: 0; padding: 0; }
   label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 5px; }
+  .check { display: flex; align-items: center; gap: 10px; margin: 14px 0; font-size: 13px; color: var(--text); }
+  .check input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--brand-2); cursor: pointer; flex: 0 0 auto; }
+  input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--brand-2); cursor: pointer; }
   input[type=text], input[type=password], input[type=email] {
     width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line);
     background: var(--card2); color: var(--text); font-size: 14px;
@@ -141,6 +144,7 @@
     <div class="tabs">
       <button class="tab active" data-tab="settings">Email settings</button>
       <button class="tab" data-tab="contact">Contact details</button>
+      <button class="tab" data-tab="payments">Payments</button>
       <button class="tab" data-tab="stats">Stats</button>
       <button class="tab" data-tab="users">Users</button>
     </div>
@@ -182,6 +186,24 @@
           <div><label for="cLinkedin">LinkedIn URL</label><input type="text" id="cLinkedin"></div>
         </div>
         <p style="margin-top:18px"><button class="btn" id="saveContactBtn">Save contact details</button></p>
+      </div>
+    </section>
+
+    <section id="tab-payments" class="tabpane" hidden>
+      <div class="card">
+        <h2>iKhokha payments</h2>
+        <p class="note">Turn on "Pay Now and Consult" on the consultation form. When enabled, visitors enter a fee, submit the form, and immediately receive your iKhokha payment link on screen and in a confirmation email. No API keys are stored — just your hosted payment link.</p>
+        <div class="grid2">
+          <div style="align-items:flex-end"><label class="check"><input type="checkbox" id="kEnabled">Enable payment link on consultation form</label></div>
+          <div></div>
+        </div>
+        <div class="grid2">
+          <div><label for="kLink">iKhokha payment link URL</label><input type="text" id="kLink" placeholder="https://app.ikhokha.com/pay/..."></div>
+          <div><label for="kFee">Suggested consultation fee (ZAR)</label><input type="text" id="kFee" placeholder="500"></div>
+        </div>
+        <div><label for="kDesc">Description shown in emails</label><input type="text" id="kDesc" placeholder="Brandon Holdings Group consultation"></div>
+        <p class="note">Tip: iKhokha payment links work for any amount. The fee you enter here prefills the visitor's amount field but they can change it freely.</p>
+        <p style="margin-top:18px"><button class="btn" id="savePayBtn">Save payment settings</button></p>
       </div>
     </section>
 
@@ -462,6 +484,11 @@
       $('#cFacebook').value = c.facebook || '';
       $('#cInstagram').value = c.instagram || '';
       $('#cLinkedin').value = c.linkedin || '';
+      var k = d.settings.iKhokha || {};
+      $('#kEnabled').checked = !!k.enabled;
+      $('#kLink').value = k.link || '';
+      $('#kFee').value = k.fee || '';
+      $('#kDesc').value = k.description || '';
     }).catch(function (e) {
       if (e.message !== 'Unauthorized') setBackend(null);
     });
@@ -595,6 +622,22 @@
           }
         }
       }).then(function () { toast('Contact details saved'); return loadSettings(); });
+    }).catch(function (e) { toast(e.message, true); });
+  });
+
+  $('#savePayBtn').addEventListener('click', function () {
+    withBusy($('#savePayBtn'), 'Saving…', function () {
+      return api('/api/admin/settings', {
+        method: 'POST',
+        json: {
+          iKhokha: {
+            enabled: $('#kEnabled').checked,
+            link: $('#kLink').value.trim(),
+            fee: $('#kFee').value.trim(),
+            description: $('#kDesc').value.trim()
+          }
+        }
+      }).then(function () { toast('Payment settings saved'); return loadSettings(); });
     }).catch(function (e) { toast(e.message, true); });
   });
 

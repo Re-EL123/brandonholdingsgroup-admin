@@ -192,18 +192,36 @@
     <section id="tab-payments" class="tabpane" hidden>
       <div class="card">
         <h2>iKhokha payments</h2>
-        <p class="note">Turn on "Pay Now and Consult" on the consultation form. When enabled, visitors enter a fee, submit the form, and immediately receive your iKhokha payment link on screen and in a confirmation email. No API keys are stored — just your hosted payment link.</p>
+        <p class="note">Payment links are created on demand by the API using your iK Pay credentials (set in the API's environment variables). Turn the toggle on to offer "Pay Now and Consult" on the consultation form. The services cart always charges its own server-side price.</p>
+        <div id="payGatewayStatus" style="margin:6px 0 14px;padding:10px 12px;border-radius:6px;background:#eee;font-size:14px">Checking gateway…</div>
         <div class="grid2">
-          <div style="align-items:flex-end"><label class="check"><input type="checkbox" id="kEnabled">Enable payment link on consultation form</label></div>
-          <div></div>
-        </div>
-        <div class="grid2">
-          <div><label for="kLink">iKhokha payment link URL</label><input type="text" id="kLink" placeholder="https://app.ikhokha.com/pay/..."></div>
+          <div style="align-items:flex-end"><label class="check"><input type="checkbox" id="kEnabled">Enable payments on consultation form</label></div>
           <div><label for="kFee">Suggested consultation fee (ZAR)</label><input type="text" id="kFee" placeholder="500"></div>
         </div>
-        <div><label for="kDesc">Description shown in emails</label><input type="text" id="kDesc" placeholder="Brandon Holdings Group consultation"></div>
-        <p class="note">Tip: iKhokha payment links work for any amount. The fee you enter here prefills the visitor's amount field but they can change it freely.</p>
+        <div><label for="kDesc">Description shown in emails &amp; at iKhokha</label><input type="text" id="kDesc" placeholder="Brandon Holdings Group consultation"></div>
+        <p class="note">Tip: the fee here prefills the visitor's amount field, but visitors can change it freely. The amount is validated server-side.</p>
         <p style="margin-top:18px"><button class="btn" id="savePayBtn">Save payment settings</button></p>
+      </div>
+
+      <div class="card">
+        <h2>Create a payment link manually</h2>
+        <p class="note">Generate an iKhokha link for a specific customer and amount, then email it to them.</p>
+        <div class="grid2">
+          <div><label for="mEmail">Customer email</label><input type="text" id="mEmail" placeholder="customer@example.com"></div>
+          <div><label for="mAmount">Amount (ZAR)</label><input type="text" id="mAmount" placeholder="500.00"></div>
+        </div>
+        <div><label for="mDesc">Description (optional)</label><input type="text" id="mDesc" placeholder="Services order — Business Plan & Documentation"></div>
+        <p style="margin-top:18px"><button class="btn" id="makePayBtn">Create &amp; email payment link</button></p>
+        <div id="makePayResult" class="note" hidden></div>
+      </div>
+
+      <div class="card">
+        <h2>Recent payments</h2>
+        <table>
+          <thead><tr><th>Time</th><th>Reference</th><th>Status</th><th>Amount</th><th>Customer</th><th>Description</th></tr></thead>
+          <tbody id="tbPayments"><tr><td colspan="6" style="color:#888">No payments yet.</td></tr></tbody>
+        </table>
+        <p style="margin-top:12px"><button class="btn secondary" id="refreshPayments">Refresh payments</button></p>
       </div>
     </section>
 
@@ -298,6 +316,12 @@
     btn.innerHTML = '<span class="bs"></span>' + label;
     var restore = function (r) { btn.innerHTML = was; btn.classList.remove('busy'); btn.disabled = false; return r; };
     return Promise.resolve().then(fn).then(restore, function (e) { restore(); throw e; });
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
   }
 
   function countUp(el, target) {
@@ -486,11 +510,42 @@
       $('#cLinkedin').value = c.linkedin || '';
       var k = d.settings.iKhokha || {};
       $('#kEnabled').checked = !!k.enabled;
-      $('#kLink').value = k.link || '';
       $('#kFee').value = k.fee || '';
       $('#kDesc').value = k.description || '';
+      renderGatewayStatus(d.iKhokhaGateway);
     }).catch(function (e) {
       if (e.message !== 'Unauthorized') setBackend(null);
+    });
+  }
+
+  function renderGatewayStatus(g) {
+    var el = $('#payGatewayStatus');
+    if (!el) return;
+    if (g && g.configured) {
+      el.innerHTML = 'Gateway: <strong class="badge ok" style="margin:0 4px">configured</strong> mode <code>' + esc(g.mode) + '</code> — callback <code>' + esc(g.callbackUrl) + '</code>. Links will be created live.';
+    } else {
+      el.innerHTML = 'Gateway: <strong class="badge warn" style="margin:0 4px">not configured</strong> — set <code>IKHOKHA_APP_ID</code> and <code>IKHOKHA_APP_SECRET</code> in the API\u2019s environment variables, then refresh.';
+    }
+  }
+
+  function loadPayments() {
+    return api('/api/admin/payments').then(function (d) {
+      renderGatewayStatus(d.gatewayConfigured != null ? { configured: d.gatewayConfigured, mode: d.gatewayMode, callbackUrl: '' } : null);
+      var rows = (d.payments || []).map(function (p) {
+        var st = p.status || 'pending';
+        var badge = 'pending' === st ? 'warn' : 'failed' === st || 'cancelled' === st ? 'warn' : 'ok';
+        return '<tr>' +
+          '<td>' + esc(p.createdAt) + '</td>' +
+          '<td><code>' + esc(p.reference) + '</code></td>' +
+          '<td><span class="badge ' + badge + '">' + esc(st) + '</span></td>' +
+          '<td>R ' + esc(p.amount) + '</td>' +
+          '<td>' + esc(p.email) + '</td>' +
+          '<td>' + esc(p.description || '') + '</td>' +
+          '</tr>';
+      }).join('');
+      $('#tbPayments').innerHTML = rows || '<tr><td colspan="6" style="color:#888">No payments yet.</td></tr>';
+    }).catch(function () {
+      $('#tbPayments').innerHTML = '<tr><td colspan="6" style="color:#888">Could not load payments.</td></tr>';
     });
   }
 
@@ -592,6 +647,7 @@
       $$('.tabpane').forEach(function (p) { p.hidden = true; });
       $('#tab-' + tab.dataset.tab).hidden = false;
       if (tab.dataset.tab === 'stats') loadStats();
+      if (tab.dataset.tab === 'payments') loadPayments();
       if (tab.dataset.tab === 'users') {
         requestAnimationFrame(function () { renderMap(lastStats ? lastStats.userEvents : []); });
       }
@@ -632,13 +688,35 @@
         json: {
           iKhokha: {
             enabled: $('#kEnabled').checked,
-            link: $('#kLink').value.trim(),
             fee: $('#kFee').value.trim(),
             description: $('#kDesc').value.trim()
           }
         }
       }).then(function () { toast('Payment settings saved'); return loadSettings(); });
     }).catch(function (e) { toast(e.message, true); });
+  });
+
+  $('#makePayBtn').addEventListener('click', function () {
+    withBusy($('#makePayBtn'), 'Creating…', function () {
+      return api('/api/admin/payments', {
+        method: 'POST',
+        json: {
+          email: $('#mEmail').value.trim(),
+          amount: $('#mAmount').value.trim(),
+          description: $('#mDesc').value.trim()
+        }
+      }).then(function (d) {
+        $('#makePayResult').hidden = false;
+        $('#makePayResult').innerHTML = 'Created <code>' + esc(d.payment.reference) + '</code> for <strong>R ' + esc(d.payment.amount) + '</strong> — ' +
+          (d.payment.emailSent ? 'link emailed to the customer.' : 'link was NOT emailed (Resend key missing). Link: <a href="' + esc(d.payment.link) + '" target="_blank" rel="noopener">open</a>.');
+        $('#mEmail').value = ''; $('#mAmount').value = ''; $('#mDesc').value = '';
+        return loadPayments();
+      });
+    }).catch(function (e) { toast(e.message, true); });
+  });
+
+  $('#refreshPayments').addEventListener('click', function () {
+    withBusy($('#refreshPayments'), 'Refreshing…', loadPayments).then(function () { toast('Payments refreshed'); });
   });
 
   $('#refreshStats').addEventListener('click', function () {
@@ -650,6 +728,7 @@
     showSplash('Connecting to API…');
     loadSettings()
       .then(function () { showSplash('Loading dashboard…'); return loadStats(); })
+      .then(function () { return loadPayments(); })
       .then(function () { hideSplash(); })
       .catch(function () { hideSplash(); });
   } else {
